@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "national-diet-search"
+version = "0.0.1"
+authors = []
+description = ""
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.12"
+ipykernel = "^6.29.5"
+requests = "^2.32.3"
+google-cloud-aiplatform = "^1.69.0"
+aiohttp = "^3.10.10"
+python-dotenv = "^1.0.1"
+fastapi = {extras = ["standard"], version = "^0.115.2"}
+fastapi-cache2 = "^0.2.2"
+langchain = "^0.3.4"
+langchain-google-vertexai = "^2.0.5"
+pydantic = "^2.9.2"
+langchain-google-genai = "^2.0.1"
+langchain-openai = "^0.2.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

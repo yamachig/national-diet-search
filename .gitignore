@@ -1,0 +1,10 @@
+.venv
+.env
+apikey.json
+poetry.lock
+node_modules
+package-lock.json
+*.pyc
+/server/openapi.json
+.devcontainer
+.vscode
