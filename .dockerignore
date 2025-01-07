@@ -3,6 +3,7 @@ client/node_modules
 client/out
 client/next-env.d.ts
 client/.env.development
+client/.env.local
 client/package-lock.json
 server/**/*.pyc
 server/.venv
@@ -10,9 +11,9 @@ server/.env
 server/openapi.json
 server/poetry.lock
 container-mount
-dockerfiles
 .devcontainer
 .vscode
 docker-compose.yml
+Dockerfile
 .gitignore
 .git

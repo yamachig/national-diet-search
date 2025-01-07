@@ -15,7 +15,8 @@ from .common import (
 )
 
 warnings.filterwarnings(
-    "ignore", "Your application has authenticated using end user credentials")
+    "ignore", "Your application has authenticated using end user credentials"
+)
 
 VERTEXAI_PROJECT = os.environ.get("VERTEXAI_PROJECT", "")
 assert VERTEXAI_PROJECT
@@ -26,10 +27,8 @@ assert VERTEXAI_MODEL
 VERTEXAI_REGION = os.environ.get("VERTEXAI_REGION", "")
 assert VERTEXAI_REGION
 
-PRICE_USD_PER_TOKEN_IN = parse_price(
-    os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
-PRICE_USD_PER_TOKEN_OUT = parse_price(
-    os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
+PRICE_USD_PER_TOKEN_IN = parse_price(os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
+PRICE_USD_PER_TOKEN_OUT = parse_price(os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
 
 safety_settings = {  # type: ignore
     SafetySetting.HarmCategory.HARM_CATEGORY_HATE_SPEECH: SafetySetting.HarmBlockThreshold.OFF,
@@ -59,7 +58,12 @@ class Model(ChatModel):
                 price=GetModelReturnInfoPrice(
                     unit_usd_in=PRICE_USD_PER_TOKEN_IN,
                     unit_usd_out=PRICE_USD_PER_TOKEN_OUT,
-                ) if (PRICE_USD_PER_TOKEN_IN is not None and PRICE_USD_PER_TOKEN_OUT is not None) else None,
+                )
+                if (
+                    PRICE_USD_PER_TOKEN_IN is not None
+                    and PRICE_USD_PER_TOKEN_OUT is not None
+                )
+                else None,
             ),
         )
 

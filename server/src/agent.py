@@ -65,6 +65,7 @@ def clean_speech(speech: str):
     speech = re.sub(r"^\u3000", "", speech, flags=re.MULTILINE)
     return speech
 
+
 # https://kokkai.ndl.go.jp/api.html
 
 
@@ -101,7 +102,9 @@ class SearchNDLReturn(BaseModel):
     speeches: list[SpeechWithQueries]
 
 
-async def search_ndl(*, queries: list[str], max_count: int = 30, concurrently: bool = False):
+async def search_ndl(
+    *, queries: list[str], max_count: int = 30, concurrently: bool = False
+):
     t0 = time.time()
 
     async def search_task(query: str) -> dict[str, Any]:
@@ -119,8 +122,11 @@ async def search_ndl(*, queries: list[str], max_count: int = 30, concurrently: b
             "query": query,
             "data": data,
         }
+
     if concurrently:
-        search_responses = await asyncio.gather(*[search_task(query) for query in queries])
+        search_responses = await asyncio.gather(
+            *[search_task(query) for query in queries]
+        )
     else:
         search_responses = [await search_task(query) for query in queries]
 
@@ -138,8 +144,7 @@ async def search_ndl(*, queries: list[str], max_count: int = 30, concurrently: b
                     speeches_dict[d.speechID] = d
                 speeches_dict[d.speechID].queries.append(query)
 
-    speeches = sorted(list(speeches_dict.values()),
-                      key=lambda v: v.date, reverse=True)
+    speeches = sorted(list(speeches_dict.values()), key=lambda v: v.date, reverse=True)
 
     return SearchNDLReturn(
         seconds=time.time() - t0,
@@ -177,7 +182,9 @@ class ScoreReturn(SendMessageReturn):
 
 async def score(*, model: ChatModel, clean_speech: str, question: str):
     t0 = time.time()
-    response = await model.send_message(prompt=get_score_prompt(clean_speech=clean_speech, question=question))
+    response = await model.send_message(
+        prompt=get_score_prompt(clean_speech=clean_speech, question=question)
+    )
     return ScoreReturn(
         **response.model_dump(),
         seconds=time.time() - t0,
@@ -214,7 +221,9 @@ class SummarizeReturn(SendMessageReturn):
 
 async def summarize(*, model: ChatModel, clean_speech: str, question: str):
     t0 = time.time()
-    response = await model.send_message(prompt=get_summary_prompt(clean_speech=clean_speech, question=question))
+    response = await model.send_message(
+        prompt=get_summary_prompt(clean_speech=clean_speech, question=question)
+    )
     return SummarizeReturn(
         **response.model_dump(),
         seconds=time.time() - t0,
@@ -255,7 +264,7 @@ def apply_annotation(orig: str, annotated: str):
         if re.match(r"</?u>", chunk):
             ret_chunks.append(chunk)
         else:
-            ret_chunks.append(orig[orig_pos:orig_pos+len(chunk)])
+            ret_chunks.append(orig[orig_pos : orig_pos + len(chunk)])
             orig_pos += len(chunk)
     if orig_pos < len(orig):
         ret_chunks.append(orig[orig_pos:])
@@ -269,7 +278,9 @@ class AnnotateReturn(SendMessageReturn):
 
 async def annotate(*, model: ChatModel, speech: str, summary: str):
     t0 = time.time()
-    response = await model.send_message(prompt=get_annotate_prompt(speech=speech, summary=summary))
+    response = await model.send_message(
+        prompt=get_annotate_prompt(speech=speech, summary=summary)
+    )
     return AnnotateReturn(
         **response.model_dump(),
         seconds=time.time() - t0,
@@ -289,7 +300,14 @@ class SearchSpeechesReturn(BaseModel):
     seconds: dict[str, int | float]
 
 
-async def search_speeches(*, model: ChatModel, question: str, max_count: int = 50, max_speech_length: int = 1000, print_message: bool = False):
+async def search_speeches(
+    *,
+    model: ChatModel,
+    question: str,
+    max_count: int = 50,
+    max_speech_length: int = 1000,
+    print_message: bool = False,
+):
     if print_message:
         print("qac...")
     qac_response = await qac(model=model, question=question)
@@ -298,12 +316,16 @@ async def search_speeches(*, model: ChatModel, question: str, max_count: int = 5
     if print_message:
         print("search_ndl...")
     search_ndl_response = await search_ndl(queries=queries)
-    speeches = list(map(lambda s: SpeechWithScore(
-        **s.model_dump(), score=0), search_ndl_response.speeches[0:max_count]))
+    speeches = list(
+        map(
+            lambda s: SpeechWithScore(**s.model_dump(), score=0),
+            search_ndl_response.speeches[0:max_count],
+        )
+    )
 
     for speech_dict in speeches:
         speech = speech_dict.speech
-        if (len(speech) > max_speech_length):
+        if len(speech) > max_speech_length:
             speech_dict.speech = f"{
                 speech[0:max_speech_length]}【以下略：合計{len(speech):,}文字】"
 
@@ -312,7 +334,11 @@ async def search_speeches(*, model: ChatModel, question: str, max_count: int = 5
     t0 = time.time()
 
     async def score_task(speech_dict: SpeechWithScore, question: str):
-        score_response = await score(model=model, clean_speech=clean_speech(speech_dict.speech), question=question)
+        score_response = await score(
+            model=model,
+            clean_speech=clean_speech(speech_dict.speech),
+            question=question,
+        )
         speech_dict.score = score_response.responseJson["score"]
         return score_response
 
@@ -325,10 +351,12 @@ async def search_speeches(*, model: ChatModel, question: str, max_count: int = 5
         speeches=sorted(speeches, key=lambda s: s.score, reverse=True),
         usage={
             "qac": qac_response.usage,
-            "score": SendMessageReturnUsage(**{
-                k: sum((r.usage.model_dump()[k] for r in score_responses), 0)
-                for k in SendMessageReturnUsage.model_fields.keys()
-            }),
+            "score": SendMessageReturnUsage(
+                **{
+                    k: sum((r.usage.model_dump()[k] for r in score_responses), 0)
+                    for k in SendMessageReturnUsage.model_fields.keys()
+                }
+            ),
         },
         seconds={
             "qac": qac_response.seconds,
@@ -346,10 +374,14 @@ class SummarizeSpeechReturn(BaseModel):
     seconds: dict[str, int | float]
 
 
-async def summarize_speech(model: ChatModel, question: str, speech: str, *, print_message: bool = False):
+async def summarize_speech(
+    model: ChatModel, question: str, speech: str, *, print_message: bool = False
+):
     if print_message:
         print("summarize...")
-    summarize_response = await summarize(model=model, clean_speech=clean_speech(speech), question=question)
+    summarize_response = await summarize(
+        model=model, clean_speech=clean_speech(speech), question=question
+    )
     summary = summarize_response.responseJson["summary"]
 
     if print_message:

@@ -1,6 +1,6 @@
 import json
-import re
 import os
+import re
 
 from langchain_core.utils.utils import secret_from_env
 from langchain_openai import ChatOpenAI
@@ -19,10 +19,8 @@ OPENAI_APIKEY = secret_from_env("OPENAI_APIKEY")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "")
 assert OPENAI_MODEL
 
-PRICE_USD_PER_TOKEN_IN = parse_price(
-    os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
-PRICE_USD_PER_TOKEN_OUT = parse_price(
-    os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
+PRICE_USD_PER_TOKEN_IN = parse_price(os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
+PRICE_USD_PER_TOKEN_OUT = parse_price(os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
 
 
 class Model(ChatModel):
@@ -43,7 +41,12 @@ class Model(ChatModel):
                 price=GetModelReturnInfoPrice(
                     unit_usd_in=PRICE_USD_PER_TOKEN_IN,
                     unit_usd_out=PRICE_USD_PER_TOKEN_OUT,
-                ) if (PRICE_USD_PER_TOKEN_IN is not None and PRICE_USD_PER_TOKEN_OUT is not None) else None,
+                )
+                if (
+                    PRICE_USD_PER_TOKEN_IN is not None
+                    and PRICE_USD_PER_TOKEN_OUT is not None
+                )
+                else None,
             ),
         )
 

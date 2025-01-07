@@ -1,6 +1,6 @@
 import json
-import re
 import os
+import re
 
 from langchain_core.utils.utils import secret_from_env
 from langchain_google_genai import (  # type: ignore
@@ -23,10 +23,8 @@ GOOGLEAI_APIKEY = secret_from_env("GOOGLEAI_APIKEY")
 GOOGLEAI_MODEL = os.environ.get("GOOGLEAI_MODEL", "")
 assert GOOGLEAI_MODEL
 
-PRICE_USD_PER_TOKEN_IN = parse_price(
-    os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
-PRICE_USD_PER_TOKEN_OUT = parse_price(
-    os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
+PRICE_USD_PER_TOKEN_IN = parse_price(os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
+PRICE_USD_PER_TOKEN_OUT = parse_price(os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
 
 
 safety_settings = {  # type: ignore
@@ -56,7 +54,12 @@ class Model(ChatModel):
                 price=GetModelReturnInfoPrice(
                     unit_usd_in=PRICE_USD_PER_TOKEN_IN,
                     unit_usd_out=PRICE_USD_PER_TOKEN_OUT,
-                ) if (PRICE_USD_PER_TOKEN_IN is not None and PRICE_USD_PER_TOKEN_OUT is not None) else None,
+                )
+                if (
+                    PRICE_USD_PER_TOKEN_IN is not None
+                    and PRICE_USD_PER_TOKEN_OUT is not None
+                )
+                else None,
             ),
         )
 

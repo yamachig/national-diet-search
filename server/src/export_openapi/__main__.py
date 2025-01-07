@@ -13,10 +13,9 @@ def main():
         routes=app.routes,
     )
 
-    (
-        Path(__file__).parent.parent.parent
-        / "openapi.json"
-    ).write_text(json.dumps(openapi), "utf-8")
+    (Path(__file__).parent.parent.parent / "openapi.json").write_text(
+        json.dumps(openapi), "utf-8"
+    )
 
 
 if __name__ == "__main__":

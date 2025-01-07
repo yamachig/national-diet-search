@@ -6,9 +6,9 @@ services:
     container_name: national-diet-search-server
     hostname: national-diet-search-server
     ports:
-        - 8000:8000
+        - 8080:8080
     build:
       context: ./
-      dockerfile: ./dockerfiles/server/Dockerfile
+      dockerfile: ./Dockerfile
     volumes:
       - ./container-mount:/workspace/container-mount:cached
