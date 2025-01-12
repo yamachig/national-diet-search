@@ -9,10 +9,11 @@ import { useAuth } from "../lib/auth";
 interface State {
   question: string | null,
   searchSpeechesResult: paths["/search_speeches"]["get"]["responses"][200]["content"]["application/json"] | null,
-  selectedSpeechID: string | null,
+  selectedSpeechIDPos: [string, number] | null,
   summarizeSpeechResult: {
     data: paths["/summarize_speech"]["get"]["responses"][200]["content"]["application/json"],
     id: string,
+    pos: number,
   } | null,
 }
 
@@ -29,13 +30,13 @@ export default function Home() {
         {
             question,
             searchSpeechesResult,
-            selectedSpeechID,
+            selectedSpeechIDPos,
             summarizeSpeechResult,
         }, setState,
     ] = React.useState<State>({
         question: null,
         searchSpeechesResult: null,
-        selectedSpeechID: null,
+        selectedSpeechIDPos: null,
         summarizeSpeechResult: null,
     });
 
@@ -47,7 +48,7 @@ export default function Home() {
             ...origState,
             question,
             searchSpeechesResult: null,
-            selectedSpeechID: null,
+            selectedSpeechIDPos: null,
             summarizeSpeechResult: null,
         }));
     }, []);
@@ -75,7 +76,7 @@ export default function Home() {
             setState(origState => ({
                 ...origState,
                 searchSpeechesResult: data,
-                selectedSpeechID: data.speeches[0]?.speechID ?? null,
+                selectedSpeechIDPos: data.speeches[0] ? [data.speeches[0].speechID, data.speeches[0].partial?.[0] ?? 0] : null,
                 summarizeSpeechResult: null,
             }));
 
@@ -83,8 +84,17 @@ export default function Home() {
     }, [authSettings, authStatus, question]);
 
     React.useEffect(() => {
-        if (selectedSpeechID === null || searchSpeechesResult === null || selectedSpeechID === (summarizeSpeechResult?.id ?? null)) return;
-        const speech = searchSpeechesResult.speeches.find((s) => s.speechID === selectedSpeechID);
+        if (
+            selectedSpeechIDPos === null ||
+            searchSpeechesResult === null ||
+            (
+                selectedSpeechIDPos &&
+                summarizeSpeechResult &&
+                selectedSpeechIDPos[0] === summarizeSpeechResult.id &&
+                selectedSpeechIDPos[1] === summarizeSpeechResult.pos
+            )
+        ) return;
+        const speech = searchSpeechesResult.speeches.find((s) => s.speechID === selectedSpeechIDPos[0] && (s.partial?.[0] ?? 0) === selectedSpeechIDPos[1]);
         if (!speech || !question) return;
 
         (async () => {
@@ -107,10 +117,10 @@ export default function Home() {
             const data = response.data;
             setState(origState => ({
                 ...origState,
-                summarizeSpeechResult: { data, id: selectedSpeechID },
+                summarizeSpeechResult: { data, id: selectedSpeechIDPos[0], pos: selectedSpeechIDPos[1] },
             }));
         })();
-    }, [authSettings, authStatus, question, searchSpeechesResult, selectedSpeechID, summarizeSpeechResult?.id]);
+    }, [authSettings, authStatus, question, searchSpeechesResult, selectedSpeechIDPos, summarizeSpeechResult, summarizeSpeechResult?.id]);
 
     const searchSpeechesCost = React.useMemo(() => {
         if (!searchSpeechesResult) return null;
@@ -188,26 +198,30 @@ export default function Home() {
                                 </div>
                             </div>
                         </div>}
-                        {searchSpeechesResult && searchSpeechesResult.speeches.map((speech, key) => (
-                            <div className={`mb-4 rounded p-4 ${speech.speechID === selectedSpeechID ? "bg-zinc-100" : "hover:bg-zinc-50"}`} key={key} onClick={() => { if (speech.speechID !== selectedSpeechID) setState(s => ({ ...s, selectedSpeechID: speech.speechID, summarizeSpeechResult: null })); }}>
-                                <div className="mb-2 text-sm">
-                                    <span className="mr-1 rounded bg-zinc-200 p-1 text-xs">{speech.score}%</span><a href={`https://kokkai.ndl.go.jp/#/detail?minId=${speech.issueID}&spkNum=${speech.speechOrder}`} target="_blank" className="text-sky-700 hover:underline" rel="noreferrer">{speech.date}／{speech.nameOfHouse} {speech.nameOfMeeting}／{speech.speaker} {speech.speakerPosition}</a>
+                        {searchSpeechesResult && searchSpeechesResult.speeches.map((speech, key) => {
+                            const isSeleted = selectedSpeechIDPos && speech.speechID === selectedSpeechIDPos[0] && (speech.partial?.[0] ?? 0) === selectedSpeechIDPos[1];
+                            return (
+                                <div className={`mb-4 rounded p-4 ${isSeleted ? "bg-zinc-100" : "hover:bg-zinc-50"}`} key={key} onClick={() => { if (!isSeleted) setState(s => ({ ...s, selectedSpeechIDPos: [speech.speechID, speech.partial?.[0] ?? 0], summarizeSpeechResult: null })); }}>
+                                    <div className="mb-2 text-sm">
+                                        <span className="mr-1 rounded bg-zinc-200 p-1 text-xs">{speech.score}%</span><a href={`https://kokkai.ndl.go.jp/#/detail?minId=${speech.issueID}&spkNum=${speech.speechOrder}`} target="_blank" className="text-sky-700 hover:underline" rel="noreferrer">{speech.date}／{speech.nameOfHouse} {speech.nameOfMeeting}／{speech.speaker} {speech.speakerPosition}</a>
+                                    </div>
+                                    {(isSeleted && summarizeSpeechResult) ? (
+                                        <pre className="whitespace-pre-wrap text-sm" dangerouslySetInnerHTML={{ __html: summarizeSpeechResult.data.annotated.replace("\n", "<br/>") }}></pre>
+                                    ) : (
+                                        <pre className="whitespace-pre-wrap text-sm">{speech.speech}</pre>
+                                    )}
+                                    <div className="mb-2 text-right text-sm">
+                                        {speech.partial && (<span className="mr-1 rounded bg-slate-300 p-1 text-xs">{speech.partial[0] + 1}-{speech.partial[1]}/{speech.length}文字</span>)}
+                                検索キーワード：{speech.queries.map((q: string) => <span className="mr-1 rounded bg-white p-1 text-xs">{q}</span>)}
+                                    </div>
                                 </div>
-                                {(speech.speechID === selectedSpeechID && summarizeSpeechResult) ? (
-                                    <pre className="whitespace-pre-wrap text-sm" dangerouslySetInnerHTML={{ __html: summarizeSpeechResult.data.annotated.replace("\n", "<br/>") }}></pre>
-                                ) : (
-                                    <pre className="whitespace-pre-wrap text-sm">{speech.speech}</pre>
-                                )}
-                                <div className="mb-2 text-right text-sm">
-                検索キーワード：{speech.queries.map((q: string) => <span className="mr-1 rounded bg-white p-1 text-xs">{q}</span>)}
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
                     <div className="flex basis-1/2 flex-col">
                         <div className="h-1/2 grow overflow-y-auto px-4">
-                            {(selectedSpeechID !== null && !summarizeSpeechResult) && <div className="animate-pulse">
+                            {(selectedSpeechIDPos !== null && !summarizeSpeechResult) && <div className="animate-pulse">
                                 <div className="flex-1 space-y-6 py-1">
                                     <div className="h-2 rounded bg-slate-200"></div>
                                     <div className="space-y-3">

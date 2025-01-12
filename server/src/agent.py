@@ -113,9 +113,7 @@ async def search_ndl(
             "recordPacking": "json",
             "maximumRecords": f"{max_count}",
         }
-        url = f"https://kokkai.ndl.go.jp/api/speech?{
-            urllib.parse.urlencode(params)
-        }"
+        url = f"https://kokkai.ndl.go.jp/api/speech?{urllib.parse.urlencode(params)}"
         data = await http_get(url)
         return {
             "url": url,
@@ -288,8 +286,31 @@ async def annotate(*, model: ChatModel, speech: str, summary: str):
     )
 
 
+class SplitSpeechReturn(BaseModel):
+    speeches: list[tuple[str, int, int]]
+
+
+def split_speech(
+    *,
+    speech: str,
+    queries: list[str],
+    max_speech_length: int = 1000,
+):
+    shift = max_speech_length // 2
+    speeches: list[tuple[str, int, int]] = []
+    for i in range(0, len(speech), shift):
+        s = speech[i : i + max_speech_length]
+        for query in queries:
+            if query not in s:
+                break
+        speeches.append((s, i, i + len(s)))
+    return SplitSpeechReturn(speeches=speeches)
+
+
 class SpeechWithScore(SpeechWithQueries):
     score: int | float
+    length: int
+    partial: tuple[int, int] | None
 
 
 class SearchSpeechesReturn(BaseModel):
@@ -316,18 +337,31 @@ async def search_speeches(
     if print_message:
         print("search_ndl...")
     search_ndl_response = await search_ndl(queries=queries)
-    speeches = list(
-        map(
-            lambda s: SpeechWithScore(**s.model_dump(), score=0),
-            search_ndl_response.speeches[0:max_count],
-        )
-    )
+    speeches: list[SpeechWithScore] = []
 
-    for speech_dict in speeches:
+    for speech_dict in map(
+        lambda s: SpeechWithScore(
+            **s.model_dump(),
+            score=0,
+            length=len(s.speech),
+            partial=None,
+        ),
+        search_ndl_response.speeches[0:max_count],
+    ):
         speech = speech_dict.speech
         if len(speech) > max_speech_length:
-            speech_dict.speech = f"{
-                speech[0:max_speech_length]}【以下略：合計{len(speech):,}文字】"
+            for s in split_speech(
+                speech=speech,
+                queries=speech_dict.queries,
+                max_speech_length=max_speech_length,
+            ).speeches:
+                d = speech_dict.model_dump()
+                d["speech"] = s[0]
+                d["partial"] = s[1:]
+                speech_dict = SpeechWithScore(**d)
+                speeches.append(speech_dict)
+        else:
+            speeches.append(speech_dict)
 
     if print_message:
         print("score...")
