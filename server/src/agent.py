@@ -3,7 +3,7 @@ import re
 import time
 import urllib.parse
 from datetime import date
-from typing import Any
+from typing import Any, Optional
 
 import aiohttp
 from pydantic import BaseModel
@@ -321,7 +321,16 @@ class SearchSpeechesReturn(BaseModel):
     seconds: dict[str, int | float]
 
 
-async def search_speeches(
+class SearchSpeechesStreamProgress(BaseModel):
+    progress: str
+    chat_model_info: Optional[GetModelReturnInfo] = None
+    queries: Optional[list[str]] = None
+    speeches_length: Optional[int] = None
+    usage: dict[str, SendMessageReturnUsage] = {}
+    seconds: dict[str, int | float] = {}
+
+
+async def search_speeches_stream(
     *,
     model: ChatModel,
     question: str,
@@ -329,14 +338,35 @@ async def search_speeches(
     max_speech_length: int = 1000,
     print_message: bool = False,
 ):
+    usage: dict[str, SendMessageReturnUsage] = {}
+    seconds: dict[str, int | float] = {}
+
+    yield SearchSpeechesStreamProgress(
+        progress="Generating queries...",
+        chat_model_info=model.info,
+        usage=usage,
+        seconds=seconds,
+    )
+
     if print_message:
         print("qac...")
     qac_response = await qac(model=model, question=question)
     queries = qac_response.responseJson["queries"]
+    usage["qac"] = qac_response.usage
+    seconds["qac"] = qac_response.seconds
+
+    yield SearchSpeechesStreamProgress(
+        progress="Searching speeches...",
+        chat_model_info=model.info,
+        queries=queries,
+        usage=usage,
+        seconds=seconds,
+    )
 
     if print_message:
         print("search_ndl...")
     search_ndl_response = await search_ndl(queries=queries)
+    seconds["search_ndl"] = search_ndl_response.seconds
     speeches: list[SpeechWithScore] = []
 
     for speech_dict in map(
@@ -363,6 +393,15 @@ async def search_speeches(
         else:
             speeches.append(speech_dict)
 
+    yield SearchSpeechesStreamProgress(
+        progress="Scoring speeches...",
+        chat_model_info=model.info,
+        queries=queries,
+        speeches_length=len(speeches),
+        usage=usage,
+        seconds=seconds,
+    )
+
     if print_message:
         print("score...")
     t0 = time.time()
@@ -377,26 +416,20 @@ async def search_speeches(
         return score_response
 
     score_responses = await asyncio.gather(*[score_task(d, question) for d in speeches])
-    score_seconds = time.time() - t0
+    usage["score"] = SendMessageReturnUsage(
+        **{
+            k: sum((r.usage.model_dump()[k] for r in score_responses), 0)
+            for k in SendMessageReturnUsage.model_fields.keys()
+        }
+    )
+    seconds["score"] = time.time() - t0
 
-    return SearchSpeechesReturn(
+    yield SearchSpeechesReturn(
         chat_model_info=model.info,
         queries=queries,
         speeches=sorted(speeches, key=lambda s: s.score, reverse=True),
-        usage={
-            "qac": qac_response.usage,
-            "score": SendMessageReturnUsage(
-                **{
-                    k: sum((r.usage.model_dump()[k] for r in score_responses), 0)
-                    for k in SendMessageReturnUsage.model_fields.keys()
-                }
-            ),
-        },
-        seconds={
-            "qac": qac_response.seconds,
-            "search_ndl": search_ndl_response.seconds,
-            "score": score_seconds,
-        },
+        usage=usage,
+        seconds=seconds,
     )
 
 
@@ -408,31 +441,56 @@ class SummarizeSpeechReturn(BaseModel):
     seconds: dict[str, int | float]
 
 
-async def summarize_speech(
+class SummarizeSpeechStreamProgress(BaseModel):
+    progress: str
+    chat_model_info: Optional[GetModelReturnInfo] = None
+    summary: Optional[str] = None
+    annotated: Optional[str] = None
+    usage: dict[str, SendMessageReturnUsage] = {}
+    seconds: dict[str, int | float] = {}
+
+
+async def summarize_speech_stream(
     model: ChatModel, question: str, speech: str, *, print_message: bool = False
 ):
+    usage: dict[str, SendMessageReturnUsage] = {}
+    seconds: dict[str, int | float] = {}
+
+    yield SummarizeSpeechStreamProgress(
+        progress="Summarizing speech...",
+        chat_model_info=model.info,
+        usage=usage,
+        seconds=seconds,
+    )
+
     if print_message:
         print("summarize...")
     summarize_response = await summarize(
         model=model, clean_speech=clean_speech(speech), question=question
     )
+    usage["summarize"] = summarize_response.usage
+    seconds["summarize"] = summarize_response.seconds
     summary = summarize_response.responseJson["summary"]
+
+    yield SummarizeSpeechStreamProgress(
+        progress="Annotating speech...",
+        chat_model_info=model.info,
+        summary=summary,
+        usage=usage,
+        seconds=seconds,
+    )
 
     if print_message:
         print("annotate...")
     annotate_response = await annotate(model=model, speech=speech, summary=summary)
+    usage["annotate"] = annotate_response.usage
+    seconds["annotate"] = annotate_response.seconds
     annotated = annotate_response.annotated
 
-    return SummarizeSpeechReturn(
+    yield SummarizeSpeechReturn(
         chat_model_info=model.info,
         summary=summary,
         annotated=annotated,
-        usage={
-            "summarize": summarize_response.usage,
-            "annotate": annotate_response.usage,
-        },
-        seconds={
-            "summarize": summarize_response.seconds,
-            "annotate": annotate_response.seconds,
-        },
+        usage=usage,
+        seconds=seconds,
     )

@@ -5,19 +5,22 @@ import React from "react";
 import createClient from "openapi-fetch";
 import type { paths } from "../serverSchema";
 import { useAuth } from "../lib/auth";
+import { EventSource } from "eventsource";
 
 interface State {
   question: string | null,
-  searchSpeechesResult: paths["/search_speeches"]["get"]["responses"][200]["content"]["application/json"] | null,
+  searchSpeechesResult: paths["/search_speeches_stream"]["get"]["responses"][200]["content"]["application/json"] | null,
   selectedSpeechIDPos: [string, number] | null,
   summarizeSpeechResult: {
-    data: paths["/summarize_speech"]["get"]["responses"][200]["content"]["application/json"],
+    data: paths["/summarize_speech_stream"]["get"]["responses"][200]["content"]["application/json"],
     id: string,
     pos: number,
   } | null,
 }
 
-const client = createClient<paths>({ baseUrl: `${process.env.NEXT_PUBLIC_API_HOST ?? ""}/` });
+const NEXT_PUBLIC_API_HOST = process.env.NEXT_PUBLIC_API_HOST ?? "";
+
+const client = createClient<paths>({ baseUrl: `${NEXT_PUBLIC_API_HOST}/` });
 
 export default function Home() {
     const { authSettings, authStatus, signIn } = useAuth(client);
@@ -58,28 +61,35 @@ export default function Home() {
         (async () => {
             if (!authSettings || (authSettings.type !== "none" && !authStatus)) return;
             const token = await authStatus?.currentUser?.getIdToken();
-            const response = await client.GET(
-                "/search_speeches",
-                {
-                    params: {
-                        query: { question },
-                        ...(token
-                            ? { header: { authorization: `Bearer ${token}` } }
-                            : {}
-                        ),
-                    },
-                },
-            );
-            if (!response.data) return;
-
-            const data = response.data;
-            setState(origState => ({
-                ...origState,
-                searchSpeechesResult: data,
-                selectedSpeechIDPos: data.speeches[0] ? [data.speeches[0].speechID, data.speeches[0].partial?.[0] ?? 0] : null,
-                summarizeSpeechResult: null,
-            }));
-
+            const eventSource = new EventSource(`${NEXT_PUBLIC_API_HOST}/search_speeches_stream?question=${encodeURIComponent(question)}`, {
+                fetch: (input, init) =>
+                    fetch(input, {
+                        ...init,
+                        headers: {
+                            ...init?.headers,
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }),
+            });
+            setTimeout(() => {
+                eventSource.close();
+            }, 40000);
+            eventSource.addEventListener("error", () => {
+                console.log("error event received");
+                eventSource.close();
+            });
+            eventSource.addEventListener("message", (event) => {
+                const data = JSON.parse(event.data);
+                if (!("progress" in data)) {
+                    eventSource.close();
+                }
+                setState(origState => ({
+                    ...origState,
+                    searchSpeechesResult: data,
+                    selectedSpeechIDPos: (data.speeches && data.speeches[0]) ? [data.speeches[0].speechID, data.speeches[0].partial?.[0] ?? 0] : null,
+                    summarizeSpeechResult: null,
+                }));
+            });
         })();
     }, [authSettings, authStatus, question]);
 
@@ -87,6 +97,7 @@ export default function Home() {
         if (
             selectedSpeechIDPos === null ||
             searchSpeechesResult === null ||
+            !("speeches" in searchSpeechesResult) ||
             (
                 selectedSpeechIDPos &&
                 summarizeSpeechResult &&
@@ -100,25 +111,33 @@ export default function Home() {
         (async () => {
             if (!authSettings || (authSettings.type !== "none" && !authStatus)) return;
             const token = await authStatus?.currentUser?.getIdToken();
-            const response = await client.GET(
-                "/summarize_speech",
-                {
-                    params: {
-                        query: { question, speech: speech.speech },
-                        ...(token
-                            ? { header: { authorization: `Bearer ${token}` } }
-                            : {}
-                        ),
-                    },
-                },
-            );
-            if (!response.data) return;
-
-            const data = response.data;
-            setState(origState => ({
-                ...origState,
-                summarizeSpeechResult: { data, id: selectedSpeechIDPos[0], pos: selectedSpeechIDPos[1] },
-            }));
+            const eventSource = new EventSource(`${NEXT_PUBLIC_API_HOST}/summarize_speech_stream?question=${encodeURIComponent(question)}&speech=${encodeURIComponent(speech.speech)}`, {
+                fetch: (input, init) =>
+                    fetch(input, {
+                        ...init,
+                        headers: {
+                            ...init?.headers,
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }),
+            });
+            setTimeout(() => {
+                eventSource.close();
+            }, 40000);
+            eventSource.addEventListener("error", () => {
+                console.log("error event received");
+                eventSource.close();
+            });
+            eventSource.addEventListener("message", (event) => {
+                const data = JSON.parse(event.data);
+                if (!("progress" in data)) {
+                    eventSource.close();
+                }
+                setState(origState => ({
+                    ...origState,
+                    summarizeSpeechResult: { data, id: selectedSpeechIDPos[0], pos: selectedSpeechIDPos[1] },
+                }));
+            });
         })();
     }, [authSettings, authStatus, question, searchSpeechesResult, selectedSpeechIDPos, summarizeSpeechResult, summarizeSpeechResult?.id]);
 
@@ -126,8 +145,8 @@ export default function Home() {
         if (!searchSpeechesResult) return null;
         const inTokens = Object.values(searchSpeechesResult.usage).map((u) => u.in_tokens as number).reduce((a, b) => a + b, 0);
         const outTokens = Object.values(searchSpeechesResult.usage).map((u) => u.out_tokens as number).reduce((a, b) => a + b, 0);
-        const inUSD = (searchSpeechesResult.chat_model_info.price !== null) ? (searchSpeechesResult.chat_model_info.price.unit_usd_in * inTokens) : null;
-        const outUSD = (searchSpeechesResult.chat_model_info.price !== null) ? (searchSpeechesResult.chat_model_info.price.unit_usd_out * outTokens) : null;
+        const inUSD = (searchSpeechesResult.chat_model_info && searchSpeechesResult.chat_model_info.price !== null) ? (searchSpeechesResult.chat_model_info.price.unit_usd_in * inTokens) : null;
+        const outUSD = (searchSpeechesResult.chat_model_info && searchSpeechesResult.chat_model_info.price !== null) ? (searchSpeechesResult.chat_model_info.price.unit_usd_out * outTokens) : null;
         const totalUSD = (inUSD !== null && outUSD !== null) ? (inUSD + outUSD) : null;
         return {
             inTokens,
@@ -142,8 +161,8 @@ export default function Home() {
         if (!summarizeSpeechResult) return null;
         const inTokens = Object.values(summarizeSpeechResult.data.usage).map((u) => u.in_tokens as number).reduce((a, b) => a + b, 0);
         const outTokens = Object.values(summarizeSpeechResult.data.usage).map((u) => u.out_tokens as number).reduce((a, b) => a + b, 0);
-        const inUSD = (summarizeSpeechResult.data.chat_model_info.price !== null) ? (summarizeSpeechResult.data.chat_model_info.price.unit_usd_in * inTokens) : null;
-        const outUSD = (summarizeSpeechResult.data.chat_model_info.price !== null) ? (summarizeSpeechResult.data.chat_model_info.price.unit_usd_out * outTokens) : null;
+        const inUSD = (summarizeSpeechResult.data.chat_model_info && summarizeSpeechResult.data.chat_model_info.price !== null) ? (summarizeSpeechResult.data.chat_model_info.price.unit_usd_in * inTokens) : null;
+        const outUSD = (summarizeSpeechResult.data.chat_model_info && summarizeSpeechResult.data.chat_model_info.price !== null) ? (summarizeSpeechResult.data.chat_model_info.price.unit_usd_out * outTokens) : null;
         const totalUSD = (inUSD !== null && outUSD !== null) ? (inUSD + outUSD) : null;
         return {
             inTokens,
@@ -159,9 +178,25 @@ export default function Home() {
     const tokensFormatter = React.useMemo(() => new Intl.NumberFormat("ja-JP", { useGrouping: true }), []);
 
     if (!authSettings || (authSettings.type !== "none" && !authStatus)) {
-        return <span>Loading...</span>;
+        return (
+            <div className="container mx-auto flex h-screen max-h-screen flex-col" style={{ fontFamily: "Noto Sans JP, Meiryo" }}>
+                <div className="mx-12 mt-5 w-auto grow-0">
+                    <div className="flex-1 animate-pulse space-y-6 py-1">
+                        <span>Loading...</span>
+                    </div>
+                </div>
+            </div>
+        );
     } else if (authSettings.type !== "none" && !authStatus?.currentUser) {
-        return (<button className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700" onClick={loginButtonOnClick}>Log in</button>);
+        return (
+            <div className="container mx-auto flex h-screen max-h-screen flex-col" style={{ fontFamily: "Noto Sans JP, Meiryo" }}>
+                <div className="mx-12 mt-5 w-auto grow-0">
+                    <div className="flex-1 space-y-6 py-1">
+                        <button className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700" onClick={loginButtonOnClick}>Log in</button>
+                    </div>
+                </div>
+            </div>
+        );
     } else {
         return (
             <div className="container mx-auto flex h-screen max-h-screen flex-col" style={{ fontFamily: "Noto Sans JP, Meiryo" }}>
@@ -179,7 +214,7 @@ export default function Home() {
                 <div className="mt-6 flex h-1/2 grow flex-row">
 
                     <div className="basis-1/2 overflow-y-auto px-4">
-                        {(question !== null && !searchSpeechesResult) && <div className="animate-pulse">
+                        {(question !== null && (!searchSpeechesResult || !("speeches" in searchSpeechesResult))) && <div className="animate-pulse">
                             <div className="flex-1 space-y-6 py-1">
                                 <div className="h-2 rounded bg-slate-200"></div>
                                 <div className="space-y-3">
@@ -198,14 +233,19 @@ export default function Home() {
                                 </div>
                             </div>
                         </div>}
-                        {searchSpeechesResult && searchSpeechesResult.speeches.map((speech, key) => {
+                        {searchSpeechesResult && ("progress" in searchSpeechesResult) && <div className="animate-pulse">
+                            <div className="flex-1 space-y-6 py-1 text-slate-600">
+                                {searchSpeechesResult.progress}
+                            </div>
+                        </div>}
+                        {searchSpeechesResult && ("speeches" in searchSpeechesResult) && searchSpeechesResult.speeches.map((speech, key) => {
                             const isSeleted = selectedSpeechIDPos && speech.speechID === selectedSpeechIDPos[0] && (speech.partial?.[0] ?? 0) === selectedSpeechIDPos[1];
                             return (
                                 <div className={`mb-4 rounded p-4 ${isSeleted ? "bg-zinc-100" : "hover:bg-zinc-50"}`} key={key} onClick={() => { if (!isSeleted) setState(s => ({ ...s, selectedSpeechIDPos: [speech.speechID, speech.partial?.[0] ?? 0], summarizeSpeechResult: null })); }}>
                                     <div className="mb-2 text-sm">
                                         <span className="mr-1 rounded bg-zinc-200 p-1 text-xs">{speech.score}%</span><a href={`https://kokkai.ndl.go.jp/#/detail?minId=${speech.issueID}&spkNum=${speech.speechOrder}`} target="_blank" className="text-sky-700 hover:underline" rel="noreferrer">{speech.date}／{speech.nameOfHouse} {speech.nameOfMeeting}／{speech.speaker} {speech.speakerPosition}</a>
                                     </div>
-                                    {(isSeleted && summarizeSpeechResult) ? (
+                                    {(isSeleted && summarizeSpeechResult?.data.annotated) ? (
                                         <pre className="whitespace-pre-wrap text-sm" dangerouslySetInnerHTML={{ __html: summarizeSpeechResult.data.annotated.replace("\n", "<br/>") }}></pre>
                                     ) : (
                                         <pre className="whitespace-pre-wrap text-sm">{speech.speech}</pre>
@@ -221,7 +261,12 @@ export default function Home() {
 
                     <div className="flex basis-1/2 flex-col">
                         <div className="h-1/2 grow overflow-y-auto px-4">
-                            {(selectedSpeechIDPos !== null && !summarizeSpeechResult) && <div className="animate-pulse">
+                            {summarizeSpeechResult && summarizeSpeechResult.data.summary && <>
+                                <ul className="text-xl">
+                                    {summarizeSpeechResult.data.summary.split(/(?<=。)/).map((sentence, key) => <li className="mb-4 pl-4 -indent-4" key={key}>○　{sentence}</li>)}
+                                </ul>
+                            </>}
+                            {(selectedSpeechIDPos !== null && !summarizeSpeechResult?.data.summary) && <div className="animate-pulse">
                                 <div className="flex-1 space-y-6 py-1">
                                     <div className="h-2 rounded bg-slate-200"></div>
                                     <div className="space-y-3">
@@ -240,22 +285,22 @@ export default function Home() {
                                     </div>
                                 </div>
                             </div>}
-                            {summarizeSpeechResult && <>
-                                <ul className="text-xl">
-                                    {summarizeSpeechResult.data.summary.split(/(?<=。)/).map((sentence, key) => <li className="mb-4 pl-4 -indent-4" key={key}>○　{sentence}</li>)}
-                                </ul>
-                            </>}
+                            {summarizeSpeechResult && ("progress" in summarizeSpeechResult.data) && <div className="animate-pulse">
+                                <div className="flex-1 space-y-6 py-1 text-slate-600">
+                                    {summarizeSpeechResult.data.progress}
+                                </div>
+                            </div>}
                         </div>
                         {(searchSpeechesResult || summarizeSpeechResult) &&
             <div className="grow-0 bg-zinc-100 p-4">
                 <ul>
-                    {searchSpeechesResult && <>
+                    {searchSpeechesResult?.queries && <>
                         <li className="text-sm">検索キーワード：{searchSpeechesResult.queries.map((q: string) => <span className="mr-1 inline-block rounded bg-white p-1 text-xs">{q}</span>)}</li>
                     </>}
-                    {searchSpeechesCost && <>
+                    {searchSpeechesCost && searchSpeechesResult?.chat_model_info && <>
                         <li className="text-sm">検索時：{searchSpeechesCost.totalUSD !== null && <>{costFormatter.format(searchSpeechesCost.totalUSD)} USD（試算）、</>}入力 {tokensFormatter.format(searchSpeechesCost.inTokens)} トークン、出力 {tokensFormatter.format(searchSpeechesCost.outTokens)} トークン{searchSpeechesResult && `、モデル：${searchSpeechesResult.chat_model_info.name}`}</li>
                     </>}
-                    {summarizeSpeechCost && <>
+                    {summarizeSpeechCost && summarizeSpeechResult?.data.chat_model_info && <>
                         <li className="text-sm">要約時：{summarizeSpeechCost.totalUSD !== null && <>{costFormatter.format(summarizeSpeechCost.totalUSD)} USD（試算）、</>}入力 {tokensFormatter.format(summarizeSpeechCost.inTokens)} トークン、出力 {tokensFormatter.format(summarizeSpeechCost.outTokens)} トークン{summarizeSpeechResult && `、モデル：${summarizeSpeechResult.data.chat_model_info.name}`}</li>
                     </>}
                 </ul>
