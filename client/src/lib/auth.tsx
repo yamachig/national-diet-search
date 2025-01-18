@@ -8,7 +8,7 @@ import React from "react";
 
 export const useAuth = (client: ReturnType<(typeof createClient<paths>)>) => {
     const [authSettings, setAuthSettings] = React.useState<paths["/auth_settings"]["get"]["responses"][200]["content"]["application/json"] | null>(null);
-    const [authStatus, setAuthStatus] = React.useState<{currentUser: User | null} | null>(null);
+    const [authStatus, setAuthStatus] = React.useState<{currentUser: {user: User, token: string} | null,} | null>(null);
 
     React.useEffect(() => {
         const authSettingsRaw = process.env["NEXT_PUBLIC_AUTH_SETTINGS"];
@@ -33,8 +33,13 @@ export const useAuth = (client: ReturnType<(typeof createClient<paths>)>) => {
             return;
         } else if (authSettings.type === "firebase") {
             if (getApps().length == 0) initializeApp(authSettings.firebaseConfig as FirebaseOptions);
-            const unsubscribe = onAuthStateChanged(getAuth(), (user) => {
-                setAuthStatus({ currentUser: user });
+            const unsubscribe = onAuthStateChanged(getAuth(), async (user) => {
+                if (user) {
+                    const token = await user.getIdToken();
+                    setAuthStatus({ currentUser: { user, token } });
+                } else {
+                    setAuthStatus({ currentUser: null });
+                }
             });
             console.log("Firebase auth state listener registered");
             return unsubscribe;

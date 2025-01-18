@@ -9,12 +9,20 @@ import { EventSource } from "eventsource";
 
 interface State {
   question: string | null,
-  searchSpeechesResult: paths["/search_speeches_stream"]["get"]["responses"][200]["content"]["application/json"] | null,
+  searchSpeechesResult: {
+    completedKey: {
+        question: string,
+    } | null,
+    data: paths["/search_speeches_stream"]["get"]["responses"][200]["content"]["application/json"],
+} | null,
   selectedSpeechIDPos: [string, number] | null,
   summarizeSpeechResult: {
     data: paths["/summarize_speech_stream"]["get"]["responses"][200]["content"]["application/json"],
-    id: string,
-    pos: number,
+    completedKey: {
+        question: string,
+        id: string,
+        pos: number,
+    } | null,
   } | null,
 }
 
@@ -57,96 +65,113 @@ export default function Home() {
     }, []);
 
     React.useEffect(() => {
-        if (question === null) return;
-        (async () => {
-            if (!authSettings || (authSettings.type !== "none" && !authStatus)) return;
-            const token = await authStatus?.currentUser?.getIdToken();
-            const eventSource = new EventSource(`${NEXT_PUBLIC_API_HOST}/search_speeches_stream?question=${encodeURIComponent(question)}`, {
-                fetch: (input, init) =>
-                    fetch(input, {
-                        ...init,
-                        headers: {
-                            ...init?.headers,
-                            Authorization: `Bearer ${token}`,
-                        },
-                    }),
-            });
-            setTimeout(() => {
+        if (question === null || searchSpeechesResult?.completedKey?.question === question) return;
+        if (!authSettings || (authSettings.type !== "none" && !authStatus?.currentUser)) return;
+        const eventSource = new EventSource(`${NEXT_PUBLIC_API_HOST}/search_speeches_stream?question=${encodeURIComponent(question)}`, {
+            fetch: (input, init) =>
+                fetch(input, {
+                    ...init,
+                    ...(
+                        (authSettings.type !== "none" && authStatus?.currentUser)
+                            ? {
+                                headers: {
+                                    ...init?.headers,
+                                    Authorization: `Bearer ${authStatus.currentUser.token}`,
+                                },
+                            } : {}
+                    ),
+                }),
+        });
+        setTimeout(() => {
+            eventSource.close();
+        }, 40000);
+        eventSource.addEventListener("error", () => {
+            console.log("error event received");
+            eventSource.close();
+        });
+        eventSource.addEventListener("message", (event) => {
+            const data = JSON.parse(event.data);
+            if (!("progress" in data)) {
                 eventSource.close();
-            }, 40000);
-            eventSource.addEventListener("error", () => {
-                console.log("error event received");
-                eventSource.close();
-            });
-            eventSource.addEventListener("message", (event) => {
-                const data = JSON.parse(event.data);
-                if (!("progress" in data)) {
-                    eventSource.close();
-                }
-                setState(origState => ({
-                    ...origState,
-                    searchSpeechesResult: data,
-                    selectedSpeechIDPos: (data.speeches && data.speeches[0]) ? [data.speeches[0].speechID, data.speeches[0].partial?.[0] ?? 0] : null,
-                    summarizeSpeechResult: null,
-                }));
-            });
-        })();
-    }, [authSettings, authStatus, question]);
+            }
+            setState(origState => ({
+                ...origState,
+                searchSpeechesResult: {
+                    completedKey: (!("progress" in data) ? { question } : null),
+                    data,
+                },
+                selectedSpeechIDPos: (data.speeches && data.speeches[0]) ? [data.speeches[0].speechID, data.speeches[0].partial?.[0] ?? 0] : null,
+                summarizeSpeechResult: null,
+            }));
+        });
+        return () => {
+            eventSource.close();
+        };
+    }, [authSettings, authStatus, question, searchSpeechesResult?.completedKey?.question]);
+
 
     React.useEffect(() => {
         if (
             selectedSpeechIDPos === null ||
             searchSpeechesResult === null ||
-            !("speeches" in searchSpeechesResult) ||
+            !("speeches" in searchSpeechesResult.data) ||
             (
                 selectedSpeechIDPos &&
-                summarizeSpeechResult &&
-                selectedSpeechIDPos[0] === summarizeSpeechResult.id &&
-                selectedSpeechIDPos[1] === summarizeSpeechResult.pos
+                question === summarizeSpeechResult?.completedKey?.question &&
+                selectedSpeechIDPos[0] === summarizeSpeechResult?.completedKey?.id &&
+                selectedSpeechIDPos[1] === summarizeSpeechResult?.completedKey?.pos
             )
         ) return;
-        const speech = searchSpeechesResult.speeches.find((s) => s.speechID === selectedSpeechIDPos[0] && (s.partial?.[0] ?? 0) === selectedSpeechIDPos[1]);
+        const speech = searchSpeechesResult.data.speeches.find((s) => s.speechID === selectedSpeechIDPos[0] && (s.partial?.[0] ?? 0) === selectedSpeechIDPos[1]);
         if (!speech || !question) return;
 
-        (async () => {
-            if (!authSettings || (authSettings.type !== "none" && !authStatus)) return;
-            const token = await authStatus?.currentUser?.getIdToken();
-            const eventSource = new EventSource(`${NEXT_PUBLIC_API_HOST}/summarize_speech_stream?question=${encodeURIComponent(question)}&speech=${encodeURIComponent(speech.speech)}`, {
-                fetch: (input, init) =>
-                    fetch(input, {
-                        ...init,
-                        headers: {
-                            ...init?.headers,
-                            Authorization: `Bearer ${token}`,
-                        },
-                    }),
-            });
-            setTimeout(() => {
+        if (!authSettings || (authSettings.type !== "none" && !authStatus?.currentUser)) return;
+        const eventSource = new EventSource(`${NEXT_PUBLIC_API_HOST}/summarize_speech_stream?question=${encodeURIComponent(question)}&speech=${encodeURIComponent(speech.speech)}`, {
+            fetch: (input, init) =>
+                fetch(input, {
+                    ...init,
+                    ...(
+                        (authSettings.type !== "none" && authStatus?.currentUser)
+                            ? {
+                                headers: {
+                                    ...init?.headers,
+                                    Authorization: `Bearer ${authStatus.currentUser.token}`,
+                                },
+                            } : {}
+                    ),
+                }),
+        });
+        setTimeout(() => {
+            eventSource.close();
+        }, 40000);
+        eventSource.addEventListener("error", () => {
+            console.log("error event received");
+            eventSource.close();
+        });
+        eventSource.addEventListener("message", (event) => {
+            const data = JSON.parse(event.data);
+            if (!("progress" in data)) {
                 eventSource.close();
-            }, 40000);
-            eventSource.addEventListener("error", () => {
-                console.log("error event received");
-                eventSource.close();
-            });
-            eventSource.addEventListener("message", (event) => {
-                const data = JSON.parse(event.data);
-                if (!("progress" in data)) {
-                    eventSource.close();
-                }
-                setState(origState => ({
-                    ...origState,
-                    summarizeSpeechResult: { data, id: selectedSpeechIDPos[0], pos: selectedSpeechIDPos[1] },
-                }));
-            });
-        })();
-    }, [authSettings, authStatus, question, searchSpeechesResult, selectedSpeechIDPos, summarizeSpeechResult, summarizeSpeechResult?.id]);
+            }
+            setState(origState => ({
+                ...origState,
+                summarizeSpeechResult: {
+                    completedKey: (!("progress" in data) ? { question, id: selectedSpeechIDPos[0], pos: selectedSpeechIDPos[1] } : null),
+                    data,
+                },
+            }));
+        });
+        return () => {
+            eventSource.close();
+        };
+    }, [authSettings, authStatus, question, searchSpeechesResult, selectedSpeechIDPos, summarizeSpeechResult?.completedKey?.id, summarizeSpeechResult?.completedKey?.pos, summarizeSpeechResult?.completedKey?.question]);
 
     const searchSpeechesCost = React.useMemo(() => {
         if (!searchSpeechesResult) return null;
-        const inTokens = Object.values(searchSpeechesResult.usage).map((u) => u.in_tokens as number).reduce((a, b) => a + b, 0);
-        const outTokens = Object.values(searchSpeechesResult.usage).map((u) => u.out_tokens as number).reduce((a, b) => a + b, 0);
-        const inUSD = (searchSpeechesResult.chat_model_info && searchSpeechesResult.chat_model_info.price !== null) ? (searchSpeechesResult.chat_model_info.price.unit_usd_in * inTokens) : null;
-        const outUSD = (searchSpeechesResult.chat_model_info && searchSpeechesResult.chat_model_info.price !== null) ? (searchSpeechesResult.chat_model_info.price.unit_usd_out * outTokens) : null;
+        const inTokens = Object.values(searchSpeechesResult.data.usage).map((u) => u.in_tokens as number).reduce((a, b) => a + b, 0);
+        const outTokens = Object.values(searchSpeechesResult.data.usage).map((u) => u.out_tokens as number).reduce((a, b) => a + b, 0);
+        const inUSD = (searchSpeechesResult.data.chat_model_info && searchSpeechesResult.data.chat_model_info.price !== null) ? (searchSpeechesResult.data.chat_model_info.price.unit_usd_in * inTokens) : null;
+        const outUSD = (searchSpeechesResult.data.chat_model_info && searchSpeechesResult.data.chat_model_info.price !== null) ? (searchSpeechesResult.data.chat_model_info.price.unit_usd_out * outTokens) : null;
         const totalUSD = (inUSD !== null && outUSD !== null) ? (inUSD + outUSD) : null;
         return {
             inTokens,
@@ -214,7 +239,7 @@ export default function Home() {
                 <div className="mt-6 flex h-1/2 grow flex-row">
 
                     <div className="basis-1/2 overflow-y-auto px-4">
-                        {(question !== null && (!searchSpeechesResult || !("speeches" in searchSpeechesResult))) && <div className="animate-pulse">
+                        {(question !== null && (!searchSpeechesResult || !("speeches" in searchSpeechesResult.data))) && <div className="animate-pulse">
                             <div className="flex-1 space-y-6 py-1">
                                 <div className="h-2 rounded bg-slate-200"></div>
                                 <div className="space-y-3">
@@ -233,12 +258,12 @@ export default function Home() {
                                 </div>
                             </div>
                         </div>}
-                        {searchSpeechesResult && ("progress" in searchSpeechesResult) && <div className="animate-pulse">
+                        {searchSpeechesResult && ("progress" in searchSpeechesResult.data) && <div className="animate-pulse">
                             <div className="flex-1 space-y-6 py-1 text-slate-600">
-                                {searchSpeechesResult.progress}
+                                {searchSpeechesResult.data.progress}
                             </div>
                         </div>}
-                        {searchSpeechesResult && ("speeches" in searchSpeechesResult) && searchSpeechesResult.speeches.map((speech, key) => {
+                        {searchSpeechesResult && ("speeches" in searchSpeechesResult.data) && searchSpeechesResult.data.speeches.map((speech, key) => {
                             const isSeleted = selectedSpeechIDPos && speech.speechID === selectedSpeechIDPos[0] && (speech.partial?.[0] ?? 0) === selectedSpeechIDPos[1];
                             return (
                                 <div className={`mb-4 rounded p-4 ${isSeleted ? "bg-zinc-100" : "hover:bg-zinc-50"}`} key={key} onClick={() => { if (!isSeleted) setState(s => ({ ...s, selectedSpeechIDPos: [speech.speechID, speech.partial?.[0] ?? 0], summarizeSpeechResult: null })); }}>
@@ -294,11 +319,11 @@ export default function Home() {
                         {(searchSpeechesResult || summarizeSpeechResult) &&
             <div className="grow-0 bg-zinc-100 p-4">
                 <ul>
-                    {searchSpeechesResult?.queries && <>
-                        <li className="text-sm">検索キーワード：{searchSpeechesResult.queries.map((q: string) => <span className="mr-1 inline-block rounded bg-white p-1 text-xs">{q}</span>)}</li>
+                    {searchSpeechesResult?.data.queries && <>
+                        <li className="text-sm">検索キーワード：{searchSpeechesResult.data.queries.map((q: string) => <span className="mr-1 inline-block rounded bg-white p-1 text-xs">{q}</span>)}</li>
                     </>}
-                    {searchSpeechesCost && searchSpeechesResult?.chat_model_info && <>
-                        <li className="text-sm">検索時：{searchSpeechesCost.totalUSD !== null && <>{costFormatter.format(searchSpeechesCost.totalUSD)} USD（試算）、</>}入力 {tokensFormatter.format(searchSpeechesCost.inTokens)} トークン、出力 {tokensFormatter.format(searchSpeechesCost.outTokens)} トークン{searchSpeechesResult && `、モデル：${searchSpeechesResult.chat_model_info.name}`}</li>
+                    {searchSpeechesCost && searchSpeechesResult?.data.chat_model_info && <>
+                        <li className="text-sm">検索時：{searchSpeechesCost.totalUSD !== null && <>{costFormatter.format(searchSpeechesCost.totalUSD)} USD（試算）、</>}入力 {tokensFormatter.format(searchSpeechesCost.inTokens)} トークン、出力 {tokensFormatter.format(searchSpeechesCost.outTokens)} トークン{searchSpeechesResult && `、モデル：${searchSpeechesResult.data.chat_model_info.name}`}</li>
                     </>}
                     {summarizeSpeechCost && summarizeSpeechResult?.data.chat_model_info && <>
                         <li className="text-sm">要約時：{summarizeSpeechCost.totalUSD !== null && <>{costFormatter.format(summarizeSpeechCost.totalUSD)} USD（試算）、</>}入力 {tokensFormatter.format(summarizeSpeechCost.inTokens)} トークン、出力 {tokensFormatter.format(summarizeSpeechCost.outTokens)} トークン{summarizeSpeechResult && `、モデル：${summarizeSpeechResult.data.chat_model_info.name}`}</li>
