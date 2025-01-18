@@ -20,6 +20,7 @@ pydantic = "2.9.0"
 langchain-google-genai = "^2.0.1"
 langchain-openai = "^0.2.3"
 firebase-admin = "^6.6.0"
+langchain-community = "^0.3.14"
 
 
 [build-system]

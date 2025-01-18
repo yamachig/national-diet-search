@@ -13,12 +13,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 from fastapi_cache.decorator import cache
+from langchain.globals import set_llm_cache
+from langchain_community.cache import InMemoryCache
 
 load_dotenv("../container-mount/.env")
 # ruff: noqa: E402
+
 from . import agent, auth
 from .models import get_model as orig_get_model
 from .models.common import ChatModel
+
+set_llm_cache(InMemoryCache())
 
 _model: ChatModel | None = None
 
