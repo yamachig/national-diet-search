@@ -46,8 +46,8 @@ This app helps search for the record of the Japanese National Diet with question
     - Optional: you can specify the unit price to estimate LLM API costs. (Note: this estimation is not the actual cost and may differ.)
 
         ```ini
-        PRICE_USD_PER_TOKEN_IN=0.000 / 1_000_000
-        PRICE_USD_PER_TOKEN_OUT=0.000 / 1_000_000
+        PRICE_USD_PER_UNIT_IN=0.000 / 1_000_000
+        PRICE_USD_PER_UNIT_OUT=0.000 / 1_000_000
         ```
 
 3. Run containers by `docker compose up`. Wait some minutes until the build and boot processes finish.
