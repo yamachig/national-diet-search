@@ -1,14 +1,21 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages.base import BaseMessage
 from pydantic import BaseModel
 
+UnitType = Literal["tokens", "not_whitespace_characters"]
+
+
+class ValuesForUnits(BaseModel):
+    tokens: int | float
+    not_whitespace_characters: int | float
+
 
 class SendMessageReturnUsage(BaseModel):
-    in_tokens: int | float
-    out_tokens: int | float
+    input: ValuesForUnits
+    output: ValuesForUnits
 
 
 class SendMessageReturn(BaseModel):
@@ -18,9 +25,14 @@ class SendMessageReturn(BaseModel):
     usage: SendMessageReturnUsage
 
 
+class UnitPriceForDirection(BaseModel):
+    input: float
+    output: float
+
+
 class GetModelReturnInfoPrice(BaseModel):
-    unit_usd_in: float
-    unit_usd_out: float
+    unit: UnitType
+    unit_usd: UnitPriceForDirection
 
 
 class GetModelReturnInfo(BaseModel):

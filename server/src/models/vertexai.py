@@ -11,6 +11,8 @@ from .common import (
     GetModelReturnInfoPrice,
     SendMessageReturn,
     SendMessageReturnUsage,
+    UnitPriceForDirection,
+    ValuesForUnits,
     parse_price,
 )
 
@@ -27,8 +29,9 @@ assert VERTEXAI_MODEL
 VERTEXAI_REGION = os.environ.get("VERTEXAI_REGION", "")
 assert VERTEXAI_REGION
 
-PRICE_USD_PER_TOKEN_IN = parse_price(os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
-PRICE_USD_PER_TOKEN_OUT = parse_price(os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
+PRICE_UNIT = os.environ.get("PRICE_UNIT", "tokens")  # type: ignore
+PRICE_USD_PER_UNIT_IN = parse_price(os.environ.get("PRICE_USD_PER_UNIT_IN", ""))
+PRICE_USD_PER_UNIT_OUT = parse_price(os.environ.get("PRICE_USD_PER_UNIT_OUT", ""))
 
 safety_settings = {  # type: ignore
     SafetySetting.HarmCategory.HARM_CATEGORY_HATE_SPEECH: SafetySetting.HarmBlockThreshold.OFF,
@@ -56,12 +59,15 @@ class Model(ChatModel):
             info=GetModelReturnInfo(
                 name=f"{model_name} on Vertex AI in {VERTEXAI_REGION}",
                 price=GetModelReturnInfoPrice(
-                    unit_usd_in=PRICE_USD_PER_TOKEN_IN,
-                    unit_usd_out=PRICE_USD_PER_TOKEN_OUT,
+                    unit=PRICE_UNIT,  # type: ignore
+                    unit_usd=UnitPriceForDirection(
+                        input=PRICE_USD_PER_UNIT_IN,
+                        output=PRICE_USD_PER_UNIT_OUT,
+                    ),
                 )
                 if (
-                    PRICE_USD_PER_TOKEN_IN is not None
-                    and PRICE_USD_PER_TOKEN_OUT is not None
+                    PRICE_USD_PER_UNIT_IN is not None
+                    and PRICE_USD_PER_UNIT_OUT is not None
                 )
                 else None,
             ),
@@ -84,11 +90,17 @@ class Model(ChatModel):
             responseText=text,
             responseJson=json.loads(m.group(1)) if m else {},
             usage=SendMessageReturnUsage(
-                in_tokens=(
-                    response.response_metadata  # type: ignore
-                )["usage_metadata"]["prompt_token_count"],
-                out_tokens=(
-                    response.response_metadata  # type: ignore
-                )["usage_metadata"]["candidates_token_count"],
+                input=ValuesForUnits(
+                    tokens=(
+                        response.response_metadata  # type: ignore
+                    )["usage_metadata"]["prompt_token_count"],  # type: ignore
+                    not_whitespace_characters=len(re.sub(r"\s", "", prompt)),
+                ),
+                output=ValuesForUnits(
+                    tokens=(
+                        response.response_metadata  # type: ignore
+                    )["usage_metadata"]["candidates_token_count"],  # type: ignore
+                    not_whitespace_characters=len(re.sub(r"\s", "", text)),
+                ),
             ),
         )

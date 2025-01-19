@@ -166,37 +166,87 @@ export default function Home() {
         };
     }, [authSettings, authStatus, question, searchSpeechesResult, selectedSpeechIDPos, summarizeSpeechResult?.completedKey?.id, summarizeSpeechResult?.completedKey?.pos, summarizeSpeechResult?.completedKey?.question]);
 
-    const searchSpeechesCost = React.useMemo(() => {
-        if (!searchSpeechesResult) return null;
-        const inTokens = Object.values(searchSpeechesResult.data.usage).map((u) => u.in_tokens as number).reduce((a, b) => a + b, 0);
-        const outTokens = Object.values(searchSpeechesResult.data.usage).map((u) => u.out_tokens as number).reduce((a, b) => a + b, 0);
-        const inUSD = (searchSpeechesResult.data.chat_model_info && searchSpeechesResult.data.chat_model_info.price !== null) ? (searchSpeechesResult.data.chat_model_info.price.unit_usd_in * inTokens) : null;
-        const outUSD = (searchSpeechesResult.data.chat_model_info && searchSpeechesResult.data.chat_model_info.price !== null) ? (searchSpeechesResult.data.chat_model_info.price.unit_usd_out * outTokens) : null;
-        const totalUSD = (inUSD !== null && outUSD !== null) ? (inUSD + outUSD) : null;
-        return {
-            inTokens,
-            outTokens,
-            inUSD,
-            outUSD,
-            totalUSD,
-        };
+    const searchSpeechesUsage = React.useMemo(() => {
+        if (!searchSpeechesResult || Object.keys(searchSpeechesResult.data.usage).length === 0) return null;
+        const ret = {} as (typeof searchSpeechesResult.data.usage)[string];
+        const allUsage = searchSpeechesResult.data.usage;
+        for (const usage of Object.values(allUsage)) {
+            for (const [_direction, value] of Object.entries(usage)) {
+                const direction = _direction as keyof typeof usage;
+                if (ret[direction] === undefined) {
+                    ret[direction] = { ...value };
+                } else {
+                    for (const [_key, val] of Object.entries(value)) {
+                        const key = _key as keyof typeof value;
+                        ret[direction][key] += val;
+                    }
+                }
+            }
+        }
+        return ret;
     }, [searchSpeechesResult]);
 
-    const summarizeSpeechCost = React.useMemo(() => {
-        if (!summarizeSpeechResult) return null;
-        const inTokens = Object.values(summarizeSpeechResult.data.usage).map((u) => u.in_tokens as number).reduce((a, b) => a + b, 0);
-        const outTokens = Object.values(summarizeSpeechResult.data.usage).map((u) => u.out_tokens as number).reduce((a, b) => a + b, 0);
-        const inUSD = (summarizeSpeechResult.data.chat_model_info && summarizeSpeechResult.data.chat_model_info.price !== null) ? (summarizeSpeechResult.data.chat_model_info.price.unit_usd_in * inTokens) : null;
-        const outUSD = (summarizeSpeechResult.data.chat_model_info && summarizeSpeechResult.data.chat_model_info.price !== null) ? (summarizeSpeechResult.data.chat_model_info.price.unit_usd_out * outTokens) : null;
-        const totalUSD = (inUSD !== null && outUSD !== null) ? (inUSD + outUSD) : null;
+    const searchSpeechesCost = React.useMemo(() => {
+        if (!searchSpeechesResult?.data.chat_model_info?.price || !searchSpeechesUsage) return null;
+        const price = searchSpeechesResult.data.chat_model_info.price;
+        const directionUSD = {} as { [K in keyof (typeof searchSpeechesResult.data.usage)[string]]: number };
+        for (const [_direction, usage] of Object.entries(searchSpeechesUsage)) {
+            const direction = _direction as keyof (typeof searchSpeechesResult.data.usage)[string];
+            if (directionUSD[direction] === undefined) directionUSD[direction] = 0;
+            directionUSD[direction] += usage[price.unit] * searchSpeechesResult.data.chat_model_info.price.unit_usd[direction];
+        }
+        const totalUSD = Object.values(directionUSD).reduce((a, b) => a + b, 0);
         return {
-            inTokens,
-            outTokens,
-            inUSD,
-            outUSD,
+            price,
+            unitDisplayName: {
+                "tokens": "トークン",
+                "not_whitespace_characters": "文字",
+            }[price.unit],
+            directionUSD,
             totalUSD,
         };
+    }, [searchSpeechesResult, searchSpeechesUsage]);
+
+    const summarizeSpeechUsage = React.useMemo(() => {
+        if (!summarizeSpeechResult || Object.keys(summarizeSpeechResult.data.usage).length === 0) return null;
+        const ret = {} as (typeof summarizeSpeechResult.data.usage)[string];
+        const allUsage = summarizeSpeechResult.data.usage;
+        for (const usage of Object.values(allUsage)) {
+            for (const [_direction, value] of Object.entries(usage)) {
+                const direction = _direction as keyof typeof usage;
+                if (ret[direction] === undefined) {
+                    ret[direction] = { ...value };
+                } else {
+                    for (const [_key, val] of Object.entries(value)) {
+                        const key = _key as keyof typeof value;
+                        ret[direction][key] += val;
+                    }
+                }
+            }
+        }
+        return ret;
     }, [summarizeSpeechResult]);
+
+    const summarizeSpeechCost = React.useMemo(() => {
+        if (!summarizeSpeechResult?.data.chat_model_info?.price || !summarizeSpeechUsage) return null;
+        const price = summarizeSpeechResult.data.chat_model_info.price;
+        const directionUSD = {} as { [K in keyof (typeof summarizeSpeechResult.data.usage)[string]]: number };
+        for (const [_direction, usage] of Object.entries(summarizeSpeechUsage)) {
+            const direction = _direction as keyof (typeof summarizeSpeechResult.data.usage)[string];
+            if (directionUSD[direction] === undefined) directionUSD[direction] = 0;
+            directionUSD[direction] += usage[price.unit] * summarizeSpeechResult.data.chat_model_info.price.unit_usd[direction];
+        }
+        const totalUSD = Object.values(directionUSD).reduce((a, b) => a + b, 0);
+        return {
+            price,
+            unitDisplayName: {
+                "tokens": "トークン",
+                "not_whitespace_characters": "文字",
+            }[price.unit],
+            directionUSD,
+            totalUSD,
+        };
+    }, [summarizeSpeechResult, summarizeSpeechUsage]);
 
     const costFormatter = React.useMemo(() => new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 6, minimumFractionDigits: 6 }), []);
 
@@ -322,12 +372,28 @@ export default function Home() {
                     {searchSpeechesResult?.data.queries && <>
                         <li className="text-sm">検索キーワード：{searchSpeechesResult.data.queries.map((q: string) => <span className="mr-1 inline-block rounded bg-white p-1 text-xs">{q}</span>)}</li>
                     </>}
-                    {searchSpeechesCost && searchSpeechesResult?.data.chat_model_info && <>
-                        <li className="text-sm">検索時：{searchSpeechesCost.totalUSD !== null && <>{costFormatter.format(searchSpeechesCost.totalUSD)} USD（試算）、</>}入力 {tokensFormatter.format(searchSpeechesCost.inTokens)} トークン、出力 {tokensFormatter.format(searchSpeechesCost.outTokens)} トークン{searchSpeechesResult && `、モデル：${searchSpeechesResult.data.chat_model_info.name}`}</li>
-                    </>}
-                    {summarizeSpeechCost && summarizeSpeechResult?.data.chat_model_info && <>
-                        <li className="text-sm">要約時：{summarizeSpeechCost.totalUSD !== null && <>{costFormatter.format(summarizeSpeechCost.totalUSD)} USD（試算）、</>}入力 {tokensFormatter.format(summarizeSpeechCost.inTokens)} トークン、出力 {tokensFormatter.format(summarizeSpeechCost.outTokens)} トークン{summarizeSpeechResult && `、モデル：${summarizeSpeechResult.data.chat_model_info.name}`}</li>
-                    </>}
+                    {searchSpeechesUsage && (
+                        <li className="text-sm">
+                            検索時：
+                            {
+                                searchSpeechesCost
+                                    ? (<>{costFormatter.format(searchSpeechesCost.totalUSD)} USD（試算）、入力 {tokensFormatter.format(searchSpeechesUsage.input[searchSpeechesCost.price.unit])} {searchSpeechesCost.unitDisplayName}、出力 {tokensFormatter.format(searchSpeechesUsage.output[searchSpeechesCost.price.unit])} {searchSpeechesCost.unitDisplayName}</>)
+                                    : (<>入力 {tokensFormatter.format(searchSpeechesUsage.input.tokens)} トークン、出力 {tokensFormatter.format(searchSpeechesUsage.output.tokens)} トークン</>)
+                            }
+                            {searchSpeechesResult?.data.chat_model_info && `、モデル：${searchSpeechesResult.data.chat_model_info.name}`}
+                        </li>
+                    )}
+                    {summarizeSpeechUsage && (
+                        <li className="text-sm">
+                            要約時：
+                            {
+                                summarizeSpeechCost
+                                    ? (<>{costFormatter.format(summarizeSpeechCost.totalUSD)} USD（試算）、入力 {tokensFormatter.format(summarizeSpeechUsage.input[summarizeSpeechCost.price.unit])} {summarizeSpeechCost.unitDisplayName}、出力 {tokensFormatter.format(summarizeSpeechUsage.output[summarizeSpeechCost.price.unit])} {summarizeSpeechCost.unitDisplayName}</>)
+                                    : (<>入力 {tokensFormatter.format(summarizeSpeechUsage.input.tokens)} トークン、出力 {tokensFormatter.format(summarizeSpeechUsage.output.tokens)} トークン</>)
+                            }
+                            {summarizeSpeechResult?.data.chat_model_info && `、モデル：${summarizeSpeechResult.data.chat_model_info.name}`}
+                        </li>
+                    )}
                 </ul>
             </div>
                         }

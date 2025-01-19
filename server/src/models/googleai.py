@@ -15,6 +15,8 @@ from .common import (
     GetModelReturnInfoPrice,
     SendMessageReturn,
     SendMessageReturnUsage,
+    UnitPriceForDirection,
+    ValuesForUnits,
     parse_price,
 )
 
@@ -23,8 +25,9 @@ GOOGLEAI_APIKEY = secret_from_env("GOOGLEAI_APIKEY")
 GOOGLEAI_MODEL = os.environ.get("GOOGLEAI_MODEL", "")
 assert GOOGLEAI_MODEL
 
-PRICE_USD_PER_TOKEN_IN = parse_price(os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
-PRICE_USD_PER_TOKEN_OUT = parse_price(os.environ.get("PRICE_USD_PER_TOKEN_IN", ""))
+PRICE_UNIT = os.environ.get("PRICE_UNIT", "tokens")  # type: ignore
+PRICE_USD_PER_UNIT_IN = parse_price(os.environ.get("PRICE_USD_PER_UNIT_IN", ""))
+PRICE_USD_PER_UNIT_OUT = parse_price(os.environ.get("PRICE_USD_PER_UNIT_OUT", ""))
 
 
 safety_settings = {  # type: ignore
@@ -52,12 +55,15 @@ class Model(ChatModel):
             info=GetModelReturnInfo(
                 name=f"{model_name} on Google AI",
                 price=GetModelReturnInfoPrice(
-                    unit_usd_in=PRICE_USD_PER_TOKEN_IN,
-                    unit_usd_out=PRICE_USD_PER_TOKEN_OUT,
+                    unit=PRICE_UNIT,  # type: ignore
+                    unit_usd=UnitPriceForDirection(
+                        input=PRICE_USD_PER_UNIT_IN,
+                        output=PRICE_USD_PER_UNIT_OUT,
+                    ),
                 )
                 if (
-                    PRICE_USD_PER_TOKEN_IN is not None
-                    and PRICE_USD_PER_TOKEN_OUT is not None
+                    PRICE_USD_PER_UNIT_IN is not None
+                    and PRICE_USD_PER_UNIT_OUT is not None
                 )
                 else None,
             ),
@@ -80,11 +86,13 @@ class Model(ChatModel):
             responseText=text,
             responseJson=json.loads(m.group(1)) if m else {},
             usage=SendMessageReturnUsage(
-                in_tokens=(
-                    response.usage_metadata["input_tokens"]  # type: ignore
+                input=ValuesForUnits(
+                    tokens=response.usage_metadata["input_tokens"],  # type: ignore
+                    not_whitespace_characters=len(re.sub(r"\s", "", prompt)),
                 ),
-                out_tokens=(
-                    response.usage_metadata["output_tokens"]  # type: ignore
+                output=ValuesForUnits(
+                    tokens=response.usage_metadata["output_tokens"],  # type: ignore
+                    not_whitespace_characters=len(re.sub(r"\s", "", text)),
                 ),
             ),
         )

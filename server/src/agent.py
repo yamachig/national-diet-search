@@ -13,6 +13,7 @@ from .models.common import (
     GetModelReturnInfo,
     SendMessageReturn,
     SendMessageReturnUsage,
+    ValuesForUnits,
 )
 
 
@@ -418,7 +419,12 @@ async def search_speeches_stream(
     score_responses = await asyncio.gather(*[score_task(d, question) for d in speeches])
     usage["score"] = SendMessageReturnUsage(
         **{
-            k: sum((r.usage.model_dump()[k] for r in score_responses), 0)
+            k: ValuesForUnits(
+                **{
+                    j: sum((r.usage.model_dump()[k][j] for r in score_responses), 0)
+                    for j in ValuesForUnits.model_fields.keys()
+                }
+            )
             for k in SendMessageReturnUsage.model_fields.keys()
         }
     )
