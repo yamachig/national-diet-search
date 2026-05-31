@@ -413,7 +413,7 @@ async def search_speeches_stream(
             clean_speech=clean_speech(speech_dict.speech),
             question=question,
         )
-        speech_dict.score = score_response.responseJson["score"]
+        speech_dict.score = float(score_response.responseJson["score"])
         return score_response
 
     score_responses = await asyncio.gather(*[score_task(d, question) for d in speeches])
